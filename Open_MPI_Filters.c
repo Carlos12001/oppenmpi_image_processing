@@ -128,10 +128,10 @@ int main(int argc, char *argv[]) {
         fclose(inputFile);
         
 	    // Broadcast the BMP header and info header to all nodes
-	MPI_Bcast(&bmpHeader, sizeof(BMPHeader), MPI_BYTE, 0, MPI_COMM_WORLD);
-	MPI_Bcast(&bmpInfoHeader, sizeof(BMPInfoHeader), MPI_BYTE, 0, MPI_COMM_WORLD);
-
+	
     }
+    MPI_Bcast(&bmpHeader, sizeof(BMPHeader), MPI_BYTE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&bmpInfoHeader, sizeof(BMPInfoHeader), MPI_BYTE, 0, MPI_COMM_WORLD);
 
     int height = bmpInfoHeader.height;
     int width = bmpInfoHeader.width;
