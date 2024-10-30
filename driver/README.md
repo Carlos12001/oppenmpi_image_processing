@@ -6,4 +6,4 @@ Código escrito por:
 - Felipe Vargas Jiménez
 - Marcelo Truque Montero
 
-Basado en (https://github.com/Johannes4Linux/Linux_Driver_Tutorial_legacy/tree/main)
+Basado en [el código de este repositorio](https://github.com/Johannes4Linux/Linux_Driver_Tutorial_legacy/tree/main)
