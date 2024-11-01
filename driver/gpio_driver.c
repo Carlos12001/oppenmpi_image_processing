@@ -7,13 +7,16 @@
 
 /* Meta Information */
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Johannes 4 GNU/Linux");
-MODULE_DESCRIPTION("A simple gpio driver for setting a LED and reading a button");
+MODULE_AUTHOR("ICMF");
+MODULE_DESCRIPTION("GPIO Driver");
 
 /* Variables for device and device class */
 static dev_t my_device_nr;
 static struct class *my_class;
 static struct cdev my_device;
+
+const int gpio_pins[] = {2, 3, 4, 5, 6, 7, 8};
+const int num_pins = sizeof(gpio_pins) / sizeof(gpio_pins[0]);
 
 #define DRIVER_NAME "my_gpio_driver"
 #define DRIVER_CLASS "MyModuleClass"
@@ -48,9 +51,6 @@ static ssize_t driver_write(struct file *File, const char *user_buffer, size_t c
 	int to_copy, not_copied, delta;
 	char value;
 
-	const int gpio_pins[] = {2, 3, 4, 5, 6, 7, 8};
-	const int num_pins = sizeof(gpio_pins) / sizeof(gpio_pins[0]);
-
 	/* Tabla de valores para cada dígito '0' a '9' */
 	const char gpio_values[10][7] = {
 		// GPIO2, GPIO3, GPIO4, GPIO5, GPIO6, GPIO7, GPIO8
@@ -84,16 +84,16 @@ static ssize_t driver_write(struct file *File, const char *user_buffer, size_t c
 
 	/* Setting the LED */
 	/* Verificar si el valor está entre '0' y '9' */
-    	if (value >= '0' && value <= '9') {
-        	int digit = value - '0'; // Convertir carácter a índice (0-9)
+	if (value >= '0' && value <= '9') {
+		int digit = value - '0'; // Convertir carácter a índice (0-9)
 
-        	/* Iterar sobre cada pin GPIO y establecer su valor correspondiente */
-	        for (int i = 0; i < num_pins; i++) {
-        	    gpio_set_value(gpio_pins[i], gpio_values[digit][i]);
-        	}
-    	} else {
-        	printk(KERN_WARNING "Entrada inválida: %c\n", value);
-	    }
+		/* Iterar sobre cada pin GPIO y establecer su valor correspondiente */
+		for (int i = 0; i < num_pins; i++) {
+			gpio_set_value(gpio_pins[i], gpio_values[digit][i]);
+		}
+	} else {
+		printk(KERN_WARNING "Entrada inválida: %c\n", value);
+	}
 
 	/* Calculate data */
 	delta = to_copy - not_copied;
@@ -258,19 +258,8 @@ static int __init ModuleInit(void) {
 	
 	
 
-	/*
-	// GPIO 17 init 
-	if(gpio_request(17, "rpi-gpio-17")) {
-		printk("Can not allocate GPIO 17\n");
-		goto Gpio4Error;
-	}
 
-	// Set GPIO 17 direction
-	if(gpio_direction_input(17)) {
-		printk("Can not set GPIO 17 to input!\n");
-		goto Gpio17Error;
-	}
-	* */
+
 
 
 
@@ -306,20 +295,11 @@ ClassError:
  * @brief This function is called, when the module is removed from the kernel
  */
 static void __exit ModuleExit(void) {
-	gpio_set_value(2, 0);
-	gpio_set_value(3, 0);
-	gpio_set_value(4, 0);
-	gpio_set_value(5, 0);
-	gpio_set_value(6, 0);
-	gpio_set_value(7, 0);
-	gpio_set_value(8, 0);
-	gpio_free(2);
-	gpio_free(3);
-	gpio_free(4);
-	gpio_free(5);
-	gpio_free(6);
-	gpio_free(7);
-	gpio_free(8);
+	for (int i = 0; i < num_pins; i++) {
+		gpio_set_value(gpio_pins[i], 0);
+		gpio_free(gpio_pins[i]);
+	}
+	
 	cdev_del(&my_device);
 	device_destroy(my_class, my_device_nr);
 	class_destroy(my_class);
