@@ -41,6 +41,11 @@ Se utiliza una Raspberry Pi 4 Model B, con las siguientes características:
     chmod +x monitor_dato.sh
     ```
     este script será el encargado de estar revisando activamente el archivo `dato.txt` para actualizar el valor de `/dev/my_gpio_driver` mediante llamadas continuas al script `update_display.sh`.
+
+  - Ejecutar el script `monitor_dato.sh`:
+    ```Bash
+    ./monitor_dato.sh
+    ```
     
   - Escribir en el archivo `dato.txt`:
     ```Bash
