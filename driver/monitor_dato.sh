@@ -3,11 +3,13 @@
 FILE="dato.txt"
 SCRIPT="./update_display.sh"
 
+# Crear dato.txt si no existe
 if [ ! -f "$FILE" ]; then
-	echo "Archivo $FILE no encontrado. Creándolo"
-	echo "0" > "$FILE"
+    echo "000" > "$FILE"
 fi
 
+# Monitorear cambios en dato.txt
 while inotifywait -e modify "$FILE"; do
-	$SCRIPT
+    $SCRIPT
 done
+
