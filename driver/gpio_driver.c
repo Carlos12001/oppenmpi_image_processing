@@ -1,19 +1,19 @@
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/fs.h>
-#include <linux/cdev.h>
-#include <linux/uaccess.h>
-#include <linux/gpio.h>
+#include <linux/module.h>  // Necesario para cualquier módulo de kernel
+#include <linux/init.h>    // Define macros para funciones de inicialización
+#include <linux/fs.h>	   // Proporciona estructuras y funciones para manejar el sistema de archivos
+#include <linux/cdev.h>    // Soporte para dispositivos de caracteres
+#include <linux/uaccess.h> // Funciones para copiar datos entre espacio de usuario y kernel
+#include <linux/gpio.h>	   // Funciones para manejar GPIO en Linux
 
 /* Meta Information */
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("ICMF");
+MODULE_AUTHOR("ICMF"); // Ignacio Grane - Carlos Mata - Marcelo Truque - Felipe Vargas
 MODULE_DESCRIPTION("GPIO Driver");
 
 /* Variables for device and device class */
-static dev_t my_device_nr;
-static struct class *my_class;
-static struct cdev my_device;
+static dev_t my_device_nr; 		// Numero de dispositivo asignado dinamicamente
+static struct class *my_class;  // Clase del dispositivo para crear nodos en /dev
+static struct cdev my_device;   // Estructura cdev que representa el dispositivo
 
 const int gpio_pins[] = {2, 3, 4, 5, 6, 7, 8};
 const int num_pins = sizeof(gpio_pins) / sizeof(gpio_pins[0]);
@@ -82,6 +82,11 @@ static ssize_t driver_write(struct file *File, const char *user_buffer, size_t c
 	/* Copy data to user */
 	not_copied = copy_from_user(&value, user_buffer, to_copy);
 
+	if (not_copied != 0) {
+		printk(KERN_WARNING "Failed to copy data from user space\n");
+		return EFAULT;
+	}
+
 	/* Setting the LED */
 	/* Verificar si el valor está entre '0' y '9' */
 	if (value >= '0' && value <= '9') {
@@ -91,6 +96,7 @@ static ssize_t driver_write(struct file *File, const char *user_buffer, size_t c
 		for (int i = 0; i < num_pins; i++) {
 			gpio_set_value(gpio_pins[i], gpio_values[digit][i]);
 		}
+		printk(KERN_INFO "Displayed digit: %c\n", value);
 	} else {
 		printk(KERN_WARNING "Entrada inválida: %c\n", value);
 	}
