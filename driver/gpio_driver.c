@@ -4,6 +4,9 @@
 #include <linux/cdev.h>
 #include <linux/uaccess.h>
 #include <linux/gpio.h>
+#include <linux/interrupt.h>
+#include <linux/poll.h>
+#include <linux/signal.h>
 
 /* Meta Information */
 MODULE_LICENSE("GPL");
@@ -24,8 +27,14 @@ const int display_pins[3][7] = {
 const int num_displays = 3;
 const int num_pins_per_display = 7;
 
+#define BUTTON_GPIO 24
+
 #define DRIVER_NAME "my_gpio_driver"
 #define DRIVER_CLASS "MyModuleClass"
+
+/* Variables para manejo de IRQ y fasync */
+static int button_irq = -1;
+static struct fasync_struct *async_queue;
 
 /* Tabla de valores para cada dígito '0' a '9' */
 /* 1 = segmento encendido, 0 = segmento apagado */
@@ -98,6 +107,13 @@ static ssize_t driver_write(struct file *File, const char *user_buffer, size_t c
 }
 
 /**
+ * @brief This function handles asynchronous notifications
+ */
+static int driver_fasync(int fd, struct file *filp, int on) {
+    return fasync_helper(fd, filp, on, &async_queue);
+}
+
+/**
  * @brief This function is called, when the device file is opened
  */
 static int driver_open(struct inode *device_file, struct file *instance) {
@@ -110,7 +126,19 @@ static int driver_open(struct inode *device_file, struct file *instance) {
  */
 static int driver_close(struct inode *device_file, struct file *instance) {
     printk(KERN_INFO "my_gpio_driver: Close was called!\n");
+    driver_fasync(-1, instance, 0); // Remover suscripción a fasync
     return 0;
+}
+
+/**
+ * @brief Interrupt handler for the button
+ */
+static irqreturn_t button_irq_handler(int irq, void *dev_id) {
+    // Notificar al espacio de usuario sobre la presión del botón
+    if (async_queue) {
+        kill_fasync(&async_queue, SIGIO, POLL_IN);
+    }
+    return IRQ_HANDLED;
 }
 
 static struct file_operations fops = {
@@ -118,7 +146,8 @@ static struct file_operations fops = {
     .open = driver_open,
     .release = driver_close,
     .read = driver_read,
-    .write = driver_write
+    .write = driver_write,
+    .fasync = driver_fasync
 };
 
 /**
@@ -177,6 +206,31 @@ static int __init ModuleInit(void) {
             }
         }
     }
+    
+    /* Configurar GPIO del botón */
+    if (gpio_request(BUTTON_GPIO, "rpi-button")) {
+        printk(KERN_ERR "my_gpio_driver: Cannot allocate GPIO %d for button\n", BUTTON_GPIO);
+        goto GpioError;
+    }
+
+    if (gpio_direction_input(BUTTON_GPIO)) {
+        printk(KERN_ERR "my_gpio_driver: Cannot set GPIO %d as input for button\n", BUTTON_GPIO);
+        goto ButtonError;
+    }
+
+    /* Obtener el número de IRQ para el GPIO del botón */
+    button_irq = gpio_to_irq(BUTTON_GPIO);
+    if (button_irq < 0) {
+        printk(KERN_ERR "my_gpio_driver: Failed to get IRQ for GPIO %d\n", BUTTON_GPIO);
+        goto ButtonError;
+    }
+
+    /* Solicitar la IRQ */
+    ret = request_irq(button_irq, button_irq_handler, IRQF_TRIGGER_RISING | IRQF_SHARED, "my_gpio_driver_button", (void *)(button_irq_handler));
+    if (ret) {
+        printk(KERN_ERR "my_gpio_driver: Failed to request IRQ for GPIO %d\n", BUTTON_GPIO);
+        goto ButtonError;
+    }
 
     printk(KERN_INFO "my_gpio_driver: All GPIOs initialized successfully for 3 displays\n");
     return 0;
@@ -188,6 +242,14 @@ GpioError:
             gpio_free(display_pins[j][k]);
         }
     }
+ButtonError:
+    gpio_free(BUTTON_GPIO);
+    for (int j = 0; j < num_displays; j++) {
+        for (int k = 0; k < num_pins_per_display; k++) {
+            gpio_free(display_pins[j][k]);
+        }
+    }
+    
     cdev_del(&my_device);
     device_destroy(my_class, my_device_nr);
     class_destroy(my_class);
@@ -205,6 +267,12 @@ static void __exit ModuleExit(void) {
             gpio_set_value(display_pins[i][j], 0); // Apagar segmentos
             gpio_free(display_pins[i][j]);
         }
+    }
+    
+	/* Liberar IRQ y GPIO del botón */
+    if (button_irq >= 0) {
+        free_irq(button_irq, (void *)(button_irq_handler));
+        gpio_free(BUTTON_GPIO);
     }
 
     /* Eliminar dispositivo y clase */
