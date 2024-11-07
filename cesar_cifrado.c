@@ -375,7 +375,7 @@ int main(int argc, char *argv[]) {
     } else if (!strcmp(argv[1], "blur")) {
         printf("Proceso %d realizando desenfoque\n", rank);
         blur_conversion(subData, bmpInfoHeader, subDataProcessed, start, end);
-    } else if (!strcmp(argv[1], "sobel")) else if (!strcmp(argv[1], "sobel")) {
+    } else if (!strcmp(argv[1], "sobel")) {
         printf("Proceso %d realizando filtro Sobel\n", rank);
         // Necesitamos datos de las filas adyacentes para el filtro Sobel
         // Enviar y recibir filas frontera entre procesos
