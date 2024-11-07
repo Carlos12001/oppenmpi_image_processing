@@ -54,15 +54,17 @@ void printHeaders(BMPHeader *header, BMPInfoHeader *infoHeader) {
 
 // Función para cifrar datos usando el cifrado César
 void caesar_cipher_encrypt(unsigned char *data, int dataSize, int shift) {
-    for (int i = 0; i < dataSize; i++) {
-        data[i] = (data[i] + shift) % 256;
+    for (int i = 0; i < dataSize; i++) {    
+        data[i] = (data[i] + shift+(i%256)) % 256;
+        //data[i] = (data[i] + shift) % 256;
     }
 }
 
 // Función para descifrar datos usando el cifrado César
-void caesar_cipher_decrypt(unsigned char *data, int dataSize, int shift) {
+void caesar_cipher_decrypt(unsigned char *data, int dataSize, int shift,int rank) {
     for (int i = 0; i < dataSize; i++) {
-        data[i] = (data[i] - shift + 256) % 256;
+        data[i] = (data[i] - shift -((i+rank*dataSize)%256) + 256) % 256;
+        //data[i] = (data[i] - shift + 256) % 256;
     }
     
 }
@@ -229,7 +231,7 @@ int main(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
 
     int rank, size, shift; // 'shift' es el desplazamiento para el cifrado César
-    shift =3;
+    shift =300;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
@@ -293,8 +295,8 @@ int main(int argc, char *argv[]) {
             offset += sendcounts[i];
         }
 
-        // Cifrar los datos antes de enviarlos
         caesar_cipher_encrypt(data, bmpInfoHeader.imageSize, shift);
+        
         FILE *encryptedFile = fopen("Encrypted_Image.bmp", "wb");
         if (!encryptedFile) {
             printf("No se pudo crear el archivo de salida\n");
@@ -349,7 +351,7 @@ int main(int argc, char *argv[]) {
                  0, MPI_COMM_WORLD);
 
     // Cada proceso descifra sus datos locales
-    caesar_cipher_decrypt(subData, localSize, shift);
+    caesar_cipher_decrypt(subData, localSize, shift,rank);
 
     // Calcular la norma de Frobenius antes del procesamiento
     double local_sum = compute_local_frobenius_norm(subData, localSize);
