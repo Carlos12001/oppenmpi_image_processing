@@ -375,12 +375,34 @@ int main(int argc, char *argv[]) {
     } else if (!strcmp(argv[1], "blur")) {
         printf("Proceso %d realizando desenfoque\n", rank);
         blur_conversion(subData, bmpInfoHeader, subDataProcessed, start, end);
-    } else if (!strcmp(argv[1], "sobel")) {
+    } else if (!strcmp(argv[1], "sobel")) else if (!strcmp(argv[1], "sobel")) {
         printf("Proceso %d realizando filtro Sobel\n", rank);
-        // Para una implementación completa, se requieren comunicaciones adicionales
-        // Aquí simplificamos asumiendo acceso a todas las filas (como antes)
-        sobel_filter(subData, bmpInfoHeader, subDataProcessed, start, end);
-    } else if (!strcmp(argv[1], "red")) {
+        // Necesitamos datos de las filas adyacentes para el filtro Sobel
+        // Enviar y recibir filas frontera entre procesos
+        // ...
+
+        // Para simplificar, asumiendo que cada proceso tiene acceso a todas las filas (no óptimo)
+        if (rank == 0) {
+            unsigned char *fullData = NULL;
+            if (rank == 0) {
+                fullData = (unsigned char *)malloc(totalSize);
+            }
+            MPI_Gather(subData, localSize, MPI_UNSIGNED_CHAR, fullData, localSize, MPI_UNSIGNED_CHAR, 0, MPI_COMM_WORLD);
+            if (rank == 0) {
+                sobel_filter(fullData, bmpInfoHeader, fullData, 0, height);
+                // Repartir datos procesados nuevamente
+                MPI_Scatterv(fullData, sendcounts, displs, MPI_UNSIGNED_CHAR,
+                             subDataProcessed, localSize, MPI_UNSIGNED_CHAR,
+                             0, MPI_COMM_WORLD);
+                free(fullData);
+            }
+        } else {
+            MPI_Gather(subData, localSize, MPI_UNSIGNED_CHAR, NULL, 0, MPI_UNSIGNED_CHAR, 0, MPI_COMM_WORLD);
+            MPI_Scatterv(NULL, NULL, NULL, MPI_UNSIGNED_CHAR,
+                         subDataProcessed, localSize, MPI_UNSIGNED_CHAR,
+                         0, MPI_COMM_WORLD);
+        }
+    }else if (!strcmp(argv[1], "red")) {
         printf("Proceso %d aplicando filtro rojo\n", rank);
         red_filter(subData, bmpInfoHeader, subDataProcessed, start, end);
     } else if (!strcmp(argv[1], "green")) {
