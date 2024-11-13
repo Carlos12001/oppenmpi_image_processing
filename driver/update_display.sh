@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DEVICE="/dev/my_gpio_driver"
-FILE="dato.txt"
+FILE="my_library/dato.txt"
 
 # Verificar que el dispositivo existe
 if [ ! -e "$DEVICE" ]; then
