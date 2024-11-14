@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include "driver/gpio_lib.h"  // Incluir la biblioteca gpio
 #define PORT 8080
 #define BUF_SIZE 1024
 
@@ -295,8 +297,8 @@ double compute_local_frobenius_norm(unsigned char *data, int dataSize) {
   return local_sum;
 }
 
-int main(int argc, char *argv[]) {
-  MPI_Init(&argc, &argv);
+int main() {
+  MPI_Init(NULL, NULL);  // Se eliminan argc y argv
 
   int rank, size, shift;  // 'shift' es el desplazamiento para el cifrado César
   shift = 300;
@@ -312,8 +314,55 @@ int main(int argc, char *argv[]) {
   int localHeight, localSize;
   int *sendcounts = NULL;
   int *displs = NULL;
+  double frobenius_norm_processed =
+      0.0;  // Variable para almacenar la norma de Frobenius
+
+  // Variables para el driver y el código de filtro
+  char input_values[4];  // 3 dígitos + terminador nulo
+  int filter_code = 0;   // Código de filtro en entero
 
   if (rank == 0) {
+    // Abrir el driver
+    int fd = gpio_open();
+    if (fd < 0) {
+      printf("Error al abrir el driver GPIO\n");
+      MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    // Leer el código de filtro desde el driver
+    ssize_t ret = gpio_read(fd, input_values, 3);
+    if (ret < 0) {
+      printf("Error al leer desde el driver GPIO\n");
+      gpio_close(fd);
+      MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    input_values[3] = '\0';  // Asegurar terminador nulo
+    printf("Código de filtro recibido: %s\n", input_values);
+
+    // Validar que los dígitos sean '0' o '1'
+    for (int i = 0; i < 3; i++) {
+      if (input_values[i] != '0' && input_values[i] != '1') {
+        printf(
+            "Entrada inválida en el driver GPIO. Debe ser una cadena de 3 "
+            "dígitos binarios.\n");
+        gpio_close(fd);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+      }
+    }
+
+    // Convertir el código binario a entero
+    filter_code = (input_values[0] - '0') * 4 + (input_values[1] - '0') * 2 +
+                  (input_values[2] - '0') * 1;
+
+    gpio_close(fd);
+
+    // Verificar si no se ha seleccionado ningún filtro
+    if (filter_code == 0) {
+      printf("No se ha seleccionado ningún filtro. Saliendo.\n");
+      MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    // Recibir el archivo de imagen
     client_connect();
     FILE *inputFile = fopen("input.bmp", "rb");
     if (inputFile == NULL) {
@@ -321,6 +370,7 @@ int main(int argc, char *argv[]) {
       MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
+    // Leer el encabezado y los datos de la imagen
     fread(&bmpHeader, sizeof(BMPHeader), 1, inputFile);
     if (bmpHeader.type !=
         0x4D42) {  // Verificar que el archivo es un BMP ('BM')
@@ -381,9 +431,32 @@ int main(int argc, char *argv[]) {
     fclose(encryptedFile);
   }
 
-  // Difundir los encabezados a todos los procesos
+  // Difundir el código de filtro a todos los procesos
+  MPI_Bcast(&filter_code, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
   MPI_Bcast(&bmpHeader, sizeof(BMPHeader), MPI_BYTE, 0, MPI_COMM_WORLD);
   MPI_Bcast(&bmpInfoHeader, sizeof(BMPInfoHeader), MPI_BYTE, 0, MPI_COMM_WORLD);
+
+  // Determinar el filtro basado en filter_code
+  char filter_name[10];    // Nombre del filtro
+  if (filter_code == 1) {  // 001
+    strcpy(filter_name, "blur");
+  } else if (filter_code == 2) {  // 010
+    strcpy(filter_name, "grey");
+  } else if (filter_code == 3) {  // 011
+    strcpy(filter_name, "sobel");
+  } else if (filter_code == 4) {  // 100
+    strcpy(filter_name, "red");
+  } else if (filter_code == 5) {  // 101
+    strcpy(filter_name, "green");
+  } else if (filter_code == 7) {  // 111
+    strcpy(filter_name, "blue");
+  } else {
+    if (rank == 0) {
+      printf("Código de filtro no reconocido: %s\n", input_values);
+    }
+    MPI_Abort(MPI_COMM_WORLD, 1);
+  }
 
   // Si no es el proceso 0, inicializar las variables necesarias
   if (rank != 0) {
@@ -445,13 +518,13 @@ int main(int argc, char *argv[]) {
   int end = localHeight;
 
   // Procesamiento según el filtro seleccionado
-  if (!strcmp(argv[1], "grey")) {
+  if (!strcmp(filter_name, "grey")) {
     printf("Proceso %d realizando conversión a escala de grises\n", rank);
     gray_conversion(subData, bmpInfoHeader, subDataProcessed, start, end);
-  } else if (!strcmp(argv[1], "blur")) {
+  } else if (!strcmp(filter_name, "blur")) {
     printf("Proceso %d realizando desenfoque\n", rank);
     blur_conversion(subData, bmpInfoHeader, subDataProcessed, start, end);
-  } else if (!strcmp(argv[1], "sobel")) {
+  } else if (!strcmp(filter_name, "sobel")) {
     printf("Proceso %d realizando filtro Sobel\n", rank);
 
     // Preparar para el intercambio de halos
@@ -502,13 +575,13 @@ int main(int argc, char *argv[]) {
                  start, end);
 
     free(subDataWithBorders);
-  } else if (!strcmp(argv[1], "red")) {
+  } else if (!strcmp(filter_name, "red")) {
     printf("Proceso %d aplicando filtro rojo\n", rank);
     red_filter(subData, bmpInfoHeader, subDataProcessed, start, end);
-  } else if (!strcmp(argv[1], "green")) {
+  } else if (!strcmp(filter_name, "green")) {
     printf("Proceso %d aplicando filtro verde\n", rank);
     green_filter(subData, bmpInfoHeader, subDataProcessed, start, end);
-  } else if (!strcmp(argv[1], "blue")) {
+  } else if (!strcmp(filter_name, "blue")) {
     printf("Proceso %d aplicando filtro azul\n", rank);
     blue_filter(subData, bmpInfoHeader, subDataProcessed, start, end);
   } else {
@@ -524,7 +597,7 @@ int main(int argc, char *argv[]) {
              0, MPI_COMM_WORLD);
 
   if (rank == 0) {
-    double frobenius_norm_processed = sqrt(total_sum_processed);
+    frobenius_norm_processed = sqrt(total_sum_processed);
     printf("Norma de Frobenius de la imagen procesada: %lf\n",
            frobenius_norm_processed);
   }
@@ -560,5 +633,54 @@ int main(int argc, char *argv[]) {
   free(subDataProcessed);
 
   MPI_Finalize();
+
+  // Después de MPI_Finalize(), escribir los primeros tres dígitos de la norma
+  // de Frobenius en el driver
+  if (rank == 0) {
+    // Abrir el driver
+    int fd = gpio_open();
+    if (fd < 0) {
+      printf("Error al abrir el driver GPIO\n");
+      return -1;
+    }
+
+    // Convertir la norma de Frobenius a cadena
+    char frobenius_str[20];
+    snprintf(frobenius_str, sizeof(frobenius_str), "%.0lf",
+             frobenius_norm_processed);
+
+    // Extraer los primeros tres dígitos
+    char output_values[4];  // 3 dígitos + terminador nulo
+    strncpy(output_values, frobenius_str, 3);
+    output_values[3] = '\0';
+
+    // Si la norma tiene menos de 3 dígitos, rellenar con ceros
+    int len = strlen(frobenius_str);
+    if (len < 3) {
+      char padded_output[4] = {'0', '0', '0', '\0'};
+      strncpy(padded_output + (3 - len), frobenius_str, len);
+      strcpy(output_values, padded_output);
+    }
+
+    // Asegurarse de que los caracteres son dígitos
+    for (int i = 0; i < 3; i++) {
+      if (output_values[i] < '0' || output_values[i] > '9') {
+        output_values[i] = '0';
+      }
+    }
+
+    // Escribir en el driver
+    ssize_t ret = gpio_write(fd, output_values, 3);
+    if (ret < 0) {
+      printf("Error al escribir en el driver GPIO\n");
+      gpio_close(fd);
+      return -1;
+    }
+
+    printf("Se han enviado los dígitos '%s' al driver GPIO\n", output_values);
+
+    gpio_close(fd);
+  }
+
   return 0;
 }
